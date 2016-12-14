@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <script src="https://aframe.io/releases/latest/aframe.min.js"></script>
+  <style>
+    svg {
+    	background-color: #FFF;
+    }
+
+  </style>
+
+</head>
+
+<body>
+
+	<a-scene>
+		<a-camera position="0 0 0" cursor-visible="true" cursor-scale="2" cursor-color="#4CC3D9" cursor-offset="2" cursor-maxdistance="100" cursor-opacity="0.5" cursor-fuse="true"></a-camera>
+		<a-entity light="type: point; color: #EEE; intensity: 0.5" position="0 3 0"></a-entity>
+		<a-assets>
+			<img id="sky" src="sky.jpg">
+		</a-assets>
+		<a-sky src="#sky"></a-sky>
+	</a-scene>
+
+	
+	<svg width="960" height="580" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"></svg>
+	<div></div>
+	<script src="http://d3js.org/d3.v3.min.js"></script>
+	<script src="http://d3js.org/topojson.v0.min.js"></script>
+	<script>
+	
+		var width = 960, height = 580;
+	
+		var svg = d3.select("a-assets").append("svg");
+		//.attr("id", "sky")
+
+		//Load in GeoJSON data
+		//countries: https://github.com/ftorghele/worldMap/tree/master/data
+        //custom geo json: https://geojson-maps.kyd.com.au/
+		d3.json("custom.geo.json", function(data) {
+
+			//Bind data and create one path per GeoJSON feature
+			var group = svg.selectAll("g")
+			   .data(data.features)
+			   .enter()
+			   .append("g")
+			   
+			   
+			var projection = d3.geo.equirectangular()
+			.scale(153)
+		    .translate([width/2,height/2])
+
+			<!--var projection = d3.geo.orthographic() .scale(245) .clipAngle(90);-->
+
+			var path = d3.geo.path()
+				.projection(projection);
+				
+			var areas = group.append("path")
+				.attr("d", path)
+				.attr("fill", "grey")
+				.on('mouseover', mouseover)
+				.on('mouseout', mouseout)
+				.on('click', clicked);
+			
+			
+		});
+		
+		function mouseover(d){
+			// Highlight hovered province
+			d3.select(this)
+				.style('fill', 'orange');
+			
+			/**
+			group.append("text")
+				.attr("x", function (d) {return path.controid(d)[0];})
+				.attr("y", function (d) {return path.controid(d)[1];})
+				.text(function (d) { return d.properties.name;});
+				
+			d3.select("a-sky")
+			.attr("src", d3.select("svg"));
+			*/				
+		}
+		
+		//var imgsrc = 'data:image/svg+xml;base64,'+ btoa(svg);
+		
+		//d3.select("div").append(function() { return svg; });
+
+		
+
+	</script>
+</body>
+</html>
