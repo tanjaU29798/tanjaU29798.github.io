@@ -1,95 +1,391 @@
 <!doctype html>
 <html lang="en">
-
 <head>
   <meta charset="utf-8">
-  <script src="https://aframe.io/releases/latest/aframe.min.js"></script>
-  <style>
-    svg {
-    	background-color: #FFF;
-    }
-
-  </style>
-
+  <link rel="stylesheet" type="text/css" href="style.css" />
 </head>
 
 <body>
-
-	<a-scene>
-		<a-camera position="0 0 0" cursor-visible="true" cursor-scale="2" cursor-color="#4CC3D9" cursor-offset="2" cursor-maxdistance="100" cursor-opacity="0.5" cursor-fuse="true"></a-camera>
-		<a-entity light="type: point; color: #EEE; intensity: 0.5" position="0 3 0"></a-entity>
-		<a-assets>
-			<svg id="sky" src="tanjaU29798.github.io/svg.svg">
-		</a-assets>
-		<a-sky src="svg.svg"></a-sky>
-	</a-scene>
-
+	<h1>World Population</h1>
+	<div id="slider"></div>
+	<h2 id="worldP"></h2>
+	<form>
+	  <select id="forecast" style="border:none; color: #999;" onChange="update()">
+		<option value="0">Low variant</option>
+		<option value="1">Medium variant</option>
+		<option value="2">High variant</option>
+		<option value="3">Constant-fertility</option>
+	  </select>
+	</form>
+	<div id="map"><div id="legend"> 
+		<div id="col" style="float: left;"></div>
+		<div style="float: left;" width="50 px">
+			<form>
+			  <input style="border:none; width:100px; color: #999;" onChange="legendChange(this)" type="number" class="legendNum" name="0" max="4000000000" step="100000" value="1000000000"><br>
+			  <input style="border:none; width:100px; color: #999;" onChange="legendChange(this)" type="number" class="legendNum" name="1" max="4000000000" step="50000" value="250000000"><br>
+			  <input style="border:none; width:100px; color: #999;" onChange="legendChange(this)" type="number" class="legendNum" name="2" max="4000000000" step="1000" value="62500000"><br>
+			  <input style="border:none; width:100px; color: #999;" onChange="legendChange(this)" type="number" class="legendNum" name="3" max="4000000000" step="500" value="15625000"><br>
+			  <input style="border:none; width:100px; color: #999;" onChange="legendChange(this)" type="number" class="legendNum" name="4" max="4000000000" step="50" value="3906250">
+			</form> 
+		</div>
+	</div></div>
+	<script type="text/javascript" src="d3.v3.min.js"></script>
 	
-	<svg width="960" height="580" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"></svg>
-	<div></div>
-	<script src="http://d3js.org/d3.v3.min.js"></script>
-	<script src="http://d3js.org/topojson.v0.min.js"></script>
-
 	<script>
+	var width = window.innerWidth, height = window.innerHeight-300; 
+	var countriesNameLong=[];
+	var countriesName=[];
+	var countriesGeounit=[];
+	var countriesFormalEn=[];
+	var svg;
+	var year;
+	var pathsMap=[];
+	var data;
+	var dataCSV;
+	var dataForecast=[];
+	var indices=[];
+	var colors=["#8C4646", "#D96459", "#F2AE72", "#F7E394", "#FEC"];
+	var legendNums=document.getElementsByClassName('legendNum');
+	var max=legendNums[0].value;
+	var numbers=[max, legendNums[1].value, legendNums[2].value, legendNums[3].value, legendNums[4].value];
+
+	//Quelle: https://geojson-maps.kyd.com.au/
+	createMap(width,height,"Data/custom.geo.json");
 	
-		var width = 960, height = 580;
-	
-		//var svg = d3.select("a-assets").append("svg");
-		//.attr("id", "sky")
-
-		//Load in GeoJSON data
-		//countries: https://github.com/ftorghele/worldMap/tree/master/data
-        //custom geo json: https://geojson-maps.kyd.com.au/
-		d3.json("custom.geo.json", function(data) {
-
-			//Bind data and create one path per GeoJSON feature
-			var group = svg.selectAll("g")
-			   .data(data.features)
-			   .enter()
-			   .append("g")
-			   
-			   
-			var projection = d3.geo.equirectangular()
-			.scale(153)
-		    .translate([width/2,height/2])
-
-			<!--var projection = d3.geo.orthographic() .scale(245) .clipAngle(90);-->
-
-			var path = d3.geo.path()
-				.projection(projection);
+	/**
+		Daten werden gelesen/eingeladen und auf die Variablen gespeichert.
+	*/
+	d3.text("Data/population.csv", function(population)
+	{
+		dataCSV = d3.csv.parse(population);
+		data=dataCSV;
+		
+		d3.text("Data/low.csv", function(low)
+		{
+			dataForecast[0] = d3.csv.parse(low);	
+			
+			d3.text("Data/medium.csv", function(medium)
+			{
+				dataForecast[1] = d3.csv.parse(medium);	
 				
+				d3.text("Data/high.csv", function(high)
+				{
+					dataForecast[2] = d3.csv.parse(high);	
+					
+					d3.text("Data/constant.csv", function(constant)
+					{
+						dataForecast[3] = d3.csv.parse(constant);
+						orderData();
+						slider();						
+					});	
+				});	
+			});	
+		});	
+	});	
+
+	
+	/**
+	 Erstellt eine Karte als svg.
+	 
+	 @ param width beeinflusst Breite der Karte
+	 @ param height beeinflusst Hoehe der Karte
+	 @ param file Pfad, an dem die json Datei mit den Daten zur Karte hinterlegt ist
+	 @ param width beeinflusst öhe der Karte
+	*/
+	function createMap(width,height,file){
+		
+		//svg wird erstellt
+		svg = d3.select("#map").append("svg")
+			.attr("width", width)
+			.attr("height", height);
+			
+		//notwendig fuer das Interagieren mit dem Hover der Maus
+		var tooltip = d3.select('body').append('div')
+				.attr("id","map")
+				.attr('class', 'hidden tooltip');
+
+		//Projektionsart der Karte
+		var projection = d3.geo.equirectangular()
+			.scale(200) //153
+			.translate([width/2,height/2]);
+
+		var path = d3.geo.path()
+			.projection(projection);
+			
+		//Einlesen der Kartendaten
+		d3.json(file, function(error, mapData) {
+
+			//Bind data and create one path per GeoJSON feature //Originalkommentar
+			var group = svg.selectAll("g")
+			   .data(mapData.features)
+			   .enter()
+			   .append("g");
+				
+			//Zeichnen der Karten-Areale
 			var areas = group.append("path")
 				.attr("d", path)
-				.attr("fill", "grey")
-				.on('mouseover', mouseover)
-				.on('mouseout', mouseout)
-				.on('click', clicked);
+				.attr("fill", "#FFF")
+				//Schrift an Mausposition beim Hover
+				.on('mousemove', function(d) {
+					var index=indices[mapData.features.indexOf(d)];
+                    var mouse = d3.mouse(svg.node()).map(function(d) {
+                        return parseInt(d);
+                    });
+					
+                    tooltip.classed('hidden', false)
+                        .attr('style', 'left:' + (mouse[0] + 20) +
+                                'px; top:' + (mouse[1] + 260) + 'px')
+                        .html(d.properties.name+": "+data[index][year]+" 000 People");
+                })
+				//Schrift verschwindet nach "mouseout"
+                .on('mouseout', function() {
+                    tooltip.classed('hidden', true);
+                });
+
 			
-			
+			var i=0;
+		
+			//Speichert die verschiedenen Namensvarianten der Laender
+			mapData.features.forEach(function (country){
+				countriesNameLong[i]=country.properties.name_long;
+				countriesName[i]=country.properties.name_sort;
+				countriesFormalEn[i]=country.properties.formal_en;
+				countriesGeounit[i]=country.properties.geounit;
+				i++;
+			});			
+			pathsMap=areas[0];
 		});
 		
-		function mouseover(d){
-			// Highlight hovered province
-			d3.select(this)
-				.style('fill', 'orange');
+		var legendData=["> ", "> ", "> ", "> ", "> "];
+
+		// Modified Legend Code from Mike Bostock: http://bl.ocks.org/mbostock/3888852
+		var legend = d3.select("#col").append("svg")
+						.attr("class", "legend")
+						.attr("width", 40)
+						.attr("height", 130)
+						.selectAll("g")
+						.data(colors)
+						.enter()
+						.append("g")
+						.attr("transform", function(d, i) { return "translate(0," + i * 20.5 + ")"; });
+
+			legend.append("rect")
+					.attr("width", 18)
+					.attr("height", 18)
+					.style("fill", d3.scale.ordinal()
+						.range(colors));
+
+			legend.append("text")
+			    .data(legendData)
+				.attr("x", 24)
+			    .attr("y", 9)
+				.attr("dy", ".35em")
+				.text(function(d) { return d; });
+
+	}
+	
+	/**
+		Ordnet jedem Index der Laender von der Json-Karte den Indices der Laender der CSV-Daten zu.
+	*/
+	function orderData(){
+		for(var i=0;i<dataCSV.length;i++){
+			if(dataCSV[i].Index>14){
+				indices[searchIndex(dataCSV[i]["Major area, region, country or area *"])]=i;
+			}
+		};
+	}
+	
+	/**
+		Fuellt die Grenzen der Laender in einer Farbe entsprechend ihrer Einwohnerzahl.
+	*/
+	function countryColorFill(){
+		for(var i=0;i<pathsMap.length;i++){
+			var index=indices[i];
+			if(index>=0){
+
+				var number=data[index][year].replace(/\s+/g, '')*1000;
+				if (number>max)number=max;
+				var ramp=d3.scale.linear()
+					.domain(numbers)
+					.range(colors);
+				pathsMap[i].attributes.fill.value=ramp(number);
+			}
 			
-			/**
-			group.append("text")
-				.attr("x", function (d) {return path.controid(d)[0];})
-				.attr("y", function (d) {return path.controid(d)[1];})
-				.text(function (d) { return d.properties.name;});
-				
-			d3.select("a-sky")
-			.attr("src", d3.select("svg"));
-			*/				
+		};
+	}
+	
+	/**
+		Sucht den Index, mit dem der Path des Landes auf der Karte angesprochen werden kann.
+		
+		Nutzt die Namen der Laender als Schluessel und gibt den Index fuer die Karte zurueck.
+		Da manche Laendernamen nicht als eindeutiger Schluessel in beiden Tabellen uebereinstimmen, musste ich einige Ausnahmen direkt ueberschreiben. 
+		
+		@ param countryToSearch Laendername des zu suchenden Landes
+		@ return den Index des gesuchten Landes aus der json-Datei
+	*/
+	function searchIndex(countryToSearch){
+		if (countryToSearch=="Viet Nam")countryToSearch="Vietnam";
+		if (countryToSearch=="TFYR Macedonia")countryToSearch="Macedonia";
+		if (countryToSearch=="Iran (Islamic Republic of)")countryToSearch="Iran";
+		if (countryToSearch=="Venezuela (Bolivarian Republic of)")countryToSearch="Venezuela";
+		if (countryToSearch=="Bolivia (Plurinational State of)")countryToSearch="Bolivia";
+		if (countryToSearch=="Dem. People's Republic of Korea")countryToSearch="North Korea";
+		for (var i=0; i<countriesNameLong.length;i++){
+			if (countryToSearch==countriesNameLong[i] || countryToSearch==countriesName[i] || countryToSearch==countriesGeounit[i] || countryToSearch==countriesFormalEn[i]){
+				return i;	
+			};
+		};
+		return 0;
+	}
+	
+	/**
+		Erstellt einen Slider fuer d3.
+		Quelle: http://bl.ocks.org/zanarmstrong/ddff7cd0b1220bc68a58
+		Originalkommentare sind beibehalten.
+	*/
+	function slider(){
+
+		formatDate = d3.time.format("%Y")	;
+
+		var widthSlide = 900,
+		heightSlide = 100;
+
+
+		// scale function
+		timeScale = d3.time.scale()
+		  .domain([new Date('1950'), new Date('2100')])
+		  .range([0, widthSlide])
+		  .clamp(true);
+
+
+		// initial value
+		var startValue = timeScale(new Date('2016'));
+		startingValue = new Date('2016');
+
+		// defines brush
+		brush = d3.svg.brush()
+		  .x(timeScale)
+		  .extent([startingValue, startingValue])
+		  .on("brush", brushed);
+
+		var sliderSvg = d3.select("#slider").append("svg")
+		  .attr("width", widthSlide+200)
+		  .attr("height", heightSlide)
+		  .append("g")
+		  // classic transform to position g
+		  .attr("transform", "translate(" + 100 + "," + 0 + ")");
+
+		sliderSvg.append("g")
+		  .attr("class", "x axis")
+		// put in middle of screen
+		.attr("transform", "translate(0," + heightSlide / 2 + ")")
+		// inroduce axis
+		.call(d3.svg.axis()
+		  .scale(timeScale)
+		  .orient("bottom")
+		  .tickFormat(function(d) {
+			return formatDate(d);
+		  })
+		  .tickSize(0)
+		  .tickPadding(5)
+		  .tickValues([timeScale.domain()[0], timeScale.domain()[1]]))
+		  .select(".domain")
+		  .select(function() {
+			console.log(this);
+			return this.parentNode.appendChild(this.cloneNode(true));
+		  })
+		  .attr("class", "halo");
+
+		var slider = sliderSvg.append("g")
+		  .attr("class", "slider")
+		  .call(brush);
+
+		slider.selectAll(".extent,.resize")
+		  .remove();
+
+		slider.select(".background")
+		  .attr("height", heightSlide);
+
+		handle = slider.append("g")
+		  .attr("class", "handle")
+
+		handle.append("path")
+		  .attr("transform", "translate(0," + heightSlide / 2 + ")")
+		  .attr("d", "M 0 -20 V 20")
+
+		handle.append('text')
+		  .text(startingValue)
+		  .attr("transform", "translate(" + (-18) + " ," + (heightSlide / 2 - 25) + ")");
+
+		slider
+		  .call(brush.event)
+	}
+	
+	
+	function brushed() {
+		var value = brush.extent()[0];
+		year=formatDate(value);
+		if (d3.event.sourceEvent) { // not a programmatic event
+			value = timeScale.invert(d3.mouse(this)[0]);
+			brush.extent([value, value]);
 		}
-		
-		//var imgsrc = 'data:image/svg+xml;base64,'+ btoa(svg);
-		
-		//d3.select("div").append(function() { return svg; });
 
-		
+		handle.attr("transform", "translate(" + timeScale(value) + ",0)");
+		handle.select('text').text(formatDate(value));
+		update();
+	}
+	
+	/**
+		Zeigt als Vergleich die Zahl der Gesamtpopulation an.
+	*/
+	function infos(){
+		document.getElementById("worldP").innerHTML="Worldpopulation: "+data[0][year]+" 000";
+	}
+	
+	/**
+		Reagiert, wenn die Zahlen der Legende geaendert werden und ruft dann die update-Methode auf.
+	*/
+	function legendChange(changed){
+		numbers[changed.name]=changed.value;
+		max=numbers[0];
+		update();
+	}
+	
+	/**
+		Wird nach einer Interaktion des Nutzers aufgerufen um die Grafk zu aktualisieren.
+	*/
+	function update(){
+		data=dataCSV;
+		e = document.getElementById("forecast");
+		value = e.value;
+		if (year>2014)data=dataForecast[value];
+		infos();
+		countryColorFill();
+	}
+	
+	/**
+		Trennt bei einer Zahl die tausender.
+		Quelle:  http://www.web-toolbox.net/webtoolbox/mathematik/tausender-trennzeichen.htm#ixzz4UJwev1uY
+		Originalkommentare beibehalten
+	*/
+	function trenner(Zahl) {
+	// Info: Die '' sind zwei Hochkommas
+	Zahl = '' + Zahl;
 
+	if (Zahl.length > 3) {
+	  var mod = Zahl.length % 3;
+	  var output = (mod > 0 ? (Zahl.substring(0,mod)) : '');
+	  for (i=0 ; i < Math.floor(Zahl.length / 3); i++) {
+		if ((mod == 0) && (i == 0))
+		output += Zahl.substring(mod+ 3 * i, mod + 3 * i + 3);
+		else
+		// hier wird das Trennzeichen festgelegt mit ' '
+		output+= ' ' + Zahl.substring(mod + 3 * i, mod + 3 * i + 3);
+		}
+	  return (output);
+	}
+	else return Zahl;
+	}
 	</script>
 </body>
 </html>
